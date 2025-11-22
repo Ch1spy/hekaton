@@ -16,4 +16,4 @@ app.include_router(split_logic.router)
 app.include_router(extraction.router)
 @app.get("/")
 def root():
-    return {"status": "Hekaton Backend Running"}
+    return {"status": "joskice Running"}

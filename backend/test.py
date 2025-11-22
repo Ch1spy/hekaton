@@ -30,9 +30,9 @@ TEST_DOCS_DIR = os.path.join(current_dir, 'test_docs')
 @pytest.fixture
 def synthetic_users():
     return [
-        User(id="user_1", name="Alice"),
-        User(id="user_2", name="Bob"),
-        User(id="user_3", name="Charlie")
+        User(id="user_1", name="Dmitri"),
+        User(id="user_2", name="Jost"),
+        User(id="user_3", name="Ema")
     ]
 
 def test_full_pipeline(synthetic_users):
