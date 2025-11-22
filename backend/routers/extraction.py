@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from typing import List
-from ..ocr_service import process_invoice_image
+from ocr_service import process_invoice_image
 
 router = APIRouter(prefix="/extract", tags=["Extraction"])
 

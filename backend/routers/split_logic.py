@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from typing import List, Dict
 
-from ..models import (
+from models import (
     CalculationRequest, 
     CalculationResponse, 
     UserBreakdown, 
