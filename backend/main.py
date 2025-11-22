@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import split_logic
+from routers import split_logic, extraction
 
 app = FastAPI()
 
@@ -13,7 +13,7 @@ app.add_middleware(
 )
 
 app.include_router(split_logic.router)
-
+app.include_router(extraction.router)
 @app.get("/")
 def root():
     return {"status": "Hekaton Backend Running"}

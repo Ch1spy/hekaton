@@ -43,10 +43,11 @@ def calculate_debt(payload: CalculationRequest):
     payer_id = payload.payer_id
     payer_name = user_map.get(payer_id, "Payer")
 
-    for uid, data in user_buckets.items():
-        share = data["total"]
-        if share > 0 and uid != payer_id:
-            debtor_name = user_map.get(uid, "Unknown")
+    for uid in user_map.keys():
+        
+        share = user_buckets[uid]["total"]
+        if uid != payer_id and share > 0:
+            debtor_name = user_map.get(uid, "Unknown")           
             settlements.append(DebtInstruction(
                 from_user_id=uid,
                 from_user_name=debtor_name,
