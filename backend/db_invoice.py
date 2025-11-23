@@ -4,7 +4,7 @@ from config import ENABLE_SUPABASE_WRITE
 
 def save_invoice_to_db(image_name: str, source: str, items: list) -> str:
     if not ENABLE_SUPABASE_WRITE:
-        print("🛑 Supabase write disabled (kill switch active)")
+        print("Supabase write disabled (kill switch active)")
         return "dry-run"
 
     invoice_res = supabase.table("invoices").insert({

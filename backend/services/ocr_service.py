@@ -30,7 +30,6 @@ if tesseract_cmd:
 else:
     print("WARNING: Tesseract binary not found. Please install it (brew install tesseract).")
 
-# ------------------------------------
 
 def preprocess_image(image_bytes):
     """

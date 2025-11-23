@@ -7,7 +7,6 @@ import time
 from fastapi.testclient import TestClient
 from dotenv import load_dotenv
 
-# Load env before imports to ensure DB/Gemini keys work
 load_dotenv()
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -16,13 +15,11 @@ if current_dir not in sys.path:
 
 from main import app
 from models import User, Item, ItemAssignment
-# import save_invoice_to_db if it exists, otherwise mock it for safety
 try:
     from db_invoice import save_invoice_to_db
 except ImportError:
     save_invoice_to_db = None
 
-# --- 1. PRO LOGGING SETUP ---
 class Colors:
     HEADER = '\033[95m'
     BLUE = '\033[94m'
@@ -33,26 +30,23 @@ class Colors:
     ENDC = '\033[0m'
     BOLD = '\033[1m'
 
-# Custom Formatter to make Console output clean (no timestamps) but File output detailed
 class ConsoleFormatter(logging.Formatter):
     def format(self, record):
         if record.levelno == logging.INFO:
             return f"{record.msg}"
         elif record.levelno == logging.WARNING:
-            return f"{Colors.WARNING}⚠️  {record.msg}{Colors.ENDC}"
+            return f"{Colors.WARNING} {record.msg}{Colors.ENDC}"
         elif record.levelno == logging.ERROR:
-            return f"{Colors.FAIL}❌ {record.msg}{Colors.ENDC}"
+            return f"{Colors.FAIL} {record.msg}{Colors.ENDC}"
         return super().format(record)
 
 logger = logging.getLogger("TestRunner")
 logger.setLevel(logging.INFO)
 
-# Handler 1: File (Detailed with timestamps)
 file_handler = logging.FileHandler("test_run.log", mode="a")
 file_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
 logger.addHandler(file_handler)
 
-# Handler 2: Console (Clean, Colored, No timestamps)
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(ConsoleFormatter())
 logger.addHandler(console_handler)
@@ -82,23 +76,22 @@ def test_full_pipeline(synthetic_users):
         return
 
     print_separator("=")
-    logger.info(f"{Colors.HEADER}{Colors.BOLD} 🚀 STARTING PIPELINE TEST{Colors.ENDC}")
-    logger.info(f" 📂 Found {len(image_files)} invoices to process")
+    logger.info(f"{Colors.HEADER}{Colors.BOLD}STARTING PIPELINE TEST{Colors.ENDC}")
+    logger.info(f"Found {len(image_files)} invoices to process")
     print_separator("=")
 
     stats = {"total": 0, "success": 0, "failed": 0, "gemini": 0, "ocr": 0}
 
     for img_filename in image_files:
         stats["total"] += 1
-        logger.info(f"\n{Colors.CYAN}📄 PROCESSING: {img_filename}{Colors.ENDC}")
+        logger.info(f"\n{Colors.CYAN}PROCESSING: {img_filename}{Colors.ENDC}")
         
         img_path = os.path.join(TEST_DOCS_DIR, img_filename)
 
-        # --- STEP 1: EXTRACTION (With Timer) ---
-        logger.info(" 1️⃣  Sending to Extraction API...")
+        logger.info("Sending to Extraction API...")
         
         try:
-            start_time = time.perf_counter()  # <--- START TIMER
+            start_time = time.perf_counter()
             
             with open(img_path, "rb") as f:
                 response = client.post(
@@ -106,7 +99,7 @@ def test_full_pipeline(synthetic_users):
                     files={"file": (img_filename, f, "image/png")}
                 )
             
-            end_time = time.perf_counter()    # <--- STOP TIMER
+            end_time = time.perf_counter()
             duration = end_time - start_time
 
             if response.status_code != 200:
@@ -114,17 +107,14 @@ def test_full_pipeline(synthetic_users):
                 stats["failed"] += 1
                 continue
 
-            # Parse Response
             data = response.json()
             source = data.get("source", "unknown")
             items_data = data.get("items", [])
             
-            # Log Timing and Source
             time_color = Colors.GREEN if duration < 5 else Colors.WARNING
-            source_icon = "✨" if source == "gemini" else "📷"
             
-            logger.info(f"    {source_icon} Source: {source.upper()}")
-            logger.info(f"    ⏱️  Latency: {time_color}{duration:.2f}s{Colors.ENDC}")
+            logger.info(f"Source: {source.upper()}")
+            logger.info(f"Latency: {time_color}{duration:.2f}s{Colors.ENDC}")
 
             if source == "gemini": stats["gemini"] += 1
             else: stats["ocr"] += 1
@@ -134,8 +124,7 @@ def test_full_pipeline(synthetic_users):
                 stats["failed"] += 1
                 continue
 
-            # Pretty Print Items
-            logger.info(f"    🛒 Found {len(items_data)} items:")
+            logger.info(f" Found {len(items_data)} items:")
             print(f"      {Colors.BOLD}{'ITEM NAME':<30} | {'PRICE':>8}{Colors.ENDC}")
             print(f"      {'-'*30} | {'-'*8}")
             
@@ -143,28 +132,23 @@ def test_full_pipeline(synthetic_users):
             for item_data in items_data:
                 item = Item(**item_data)
                 items.append(item)
-                # Clean table row
                 print(f"      {item.name[:30]:<30} | {item.price:>8.2f} €")
 
-            # --- DATABASE SAVE (Optional) ---
             if save_invoice_to_db:
                 try:
                     invoice_id = save_invoice_to_db(img_filename, source, items)
-                    logger.info(f"    💾 Saved to DB (ID: {invoice_id})")
+                    logger.info(f"Saved to DB (ID: {invoice_id})")
                 except Exception as e:
                     logger.error(f"DB Save failed: {e}")
 
-            # --- STEP 2: LOGIC SIMULATION ---
             random.seed(42) 
             assignments = []
-            # Assign randomly without logging every single line
             for item in items:
                 assignments.append(ItemAssignment(item_id=item.id, user_id=random.choice(synthetic_users).id))
             
-            logger.info(f" 2️⃣  Simulated {len(assignments)} random user assignments.")
+            logger.info(f"Simulated {len(assignments)} random user assignments.")
 
-            # --- STEP 3: CALCULATION ---
-            logger.info(f" 3️⃣  Calculating Split...")
+            logger.info(f"Calculating Split...")
             payer = synthetic_users[0]
             
             payload = {
@@ -183,7 +167,6 @@ def test_full_pipeline(synthetic_users):
                 
             result = calc_response.json()
 
-            # --- STEP 4: VERIFICATION ---
             total_ocr = sum(i.price for i in items)
             total_calc = result['total_bill_amount']
             
@@ -192,28 +175,25 @@ def test_full_pipeline(synthetic_users):
                 stats["failed"] += 1
                 continue
 
-            # Summarize Debt
-            logger.info(f"    💰 Total Bill: {Colors.BOLD}{total_calc:.2f} €{Colors.ENDC}")
+            logger.info(f"Total Bill: {Colors.BOLD}{total_calc:.2f} €{Colors.ENDC}")
             
-            # Just show the final settlements, not every user share (reduce noise)
             if result['settlements']:
-                logger.info("    🤝 Settlements:")
+                logger.info("Settlements:")
                 for s in result['settlements']:
                     logger.info(f"       -> {s['message']}")
             else:
                 logger.info("       -> No debts generated.")
 
-            logger.info(f"{Colors.GREEN}✅ INVOICE PASSED{Colors.ENDC}")
+            logger.info(f"{Colors.GREEN}INVOICE PASSED{Colors.ENDC}")
             stats["success"] += 1
             
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
             stats["failed"] += 1
 
-    # --- SUMMARY ---
     print("\n")
     print_separator("=")
-    logger.info(f"{Colors.HEADER}📊 TEST SUMMARY{Colors.ENDC}")
+    logger.info(f"{Colors.HEADER}TEST SUMMARY{Colors.ENDC}")
     logger.info(f"   Total:   {stats['total']}")
     logger.info(f"   Passed:  {Colors.GREEN}{stats['success']}{Colors.ENDC}")
     logger.info(f"   Failed:  {Colors.FAIL}{stats['failed']}{Colors.ENDC}")

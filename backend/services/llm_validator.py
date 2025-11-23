@@ -4,7 +4,6 @@ import re
 from typing import List, Dict, Optional
 
 def clean_json_string(text: str) -> str:
-    """Removes Markdown backticks and ensures valid JSON string."""
     text = re.sub(r'```json\s*', '', text)
     text = re.sub(r'```\s*', '', text)
     return text.strip()
@@ -49,15 +48,12 @@ def validate_items_with_llm(raw_text: str, parsed_items: List[Dict]) -> Optional
         clean_text = clean_json_string(resp.text)
         items = json.loads(clean_text)
         
-        # Post-processing
         if isinstance(items, list):
             for i, item in enumerate(items, 1):
                 item['id'] = str(i)
                 if isinstance(item.get('price'), str):
                     try:
-                        # Handle "1.234,56" or "1,234.56" or "1,50"
                         val = item['price'].replace(',', '.')
-                        # Remove multiple dots if any exist (keep last one)
                         if val.count('.') > 1:
                             parts = val.split('.')
                             val = "".join(parts[:-1]) + "." + parts[-1]
