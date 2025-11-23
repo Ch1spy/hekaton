@@ -3,7 +3,12 @@ import os
 import sys
 import logging
 import random
+import time
 from fastapi.testclient import TestClient
+from dotenv import load_dotenv
+
+# Load env before imports to ensure DB/Gemini keys work
+load_dotenv()
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
@@ -11,20 +16,48 @@ if current_dir not in sys.path:
 
 from main import app
 from models import User, Item, ItemAssignment
+# import save_invoice_to_db if it exists, otherwise mock it for safety
+try:
+    from db_invoice import save_invoice_to_db
+except ImportError:
+    save_invoice_to_db = None
 
-logging.basicConfig(
-    level=logging.INFO, 
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.FileHandler("test_run.log", mode="a"),
-        logging.StreamHandler(sys.stdout)
-    ],
-    force=True
-)
-logger = logging.getLogger(__name__)
+# --- 1. PRO LOGGING SETUP ---
+class Colors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+
+# Custom Formatter to make Console output clean (no timestamps) but File output detailed
+class ConsoleFormatter(logging.Formatter):
+    def format(self, record):
+        if record.levelno == logging.INFO:
+            return f"{record.msg}"
+        elif record.levelno == logging.WARNING:
+            return f"{Colors.WARNING}⚠️  {record.msg}{Colors.ENDC}"
+        elif record.levelno == logging.ERROR:
+            return f"{Colors.FAIL}❌ {record.msg}{Colors.ENDC}"
+        return super().format(record)
+
+logger = logging.getLogger("TestRunner")
+logger.setLevel(logging.INFO)
+
+# Handler 1: File (Detailed with timestamps)
+file_handler = logging.FileHandler("test_run.log", mode="a")
+file_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+logger.addHandler(file_handler)
+
+# Handler 2: Console (Clean, Colored, No timestamps)
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(ConsoleFormatter())
+logger.addHandler(console_handler)
 
 client = TestClient(app) 
-
 TEST_DOCS_DIR = os.path.join(current_dir, 'test_docs')
 
 @pytest.fixture
@@ -35,87 +68,105 @@ def synthetic_users():
         User(id="user_3", name="Ema")
     ]
 
+def print_separator(char="-", length=60, color=Colors.BLUE):
+    logger.info(f"{color}{char * length}{Colors.ENDC}")
+
 def test_full_pipeline(synthetic_users):
     if not os.path.exists(TEST_DOCS_DIR):
         pytest.fail(f"Directory not found: {TEST_DOCS_DIR}")
 
-    image_files = [f for f in os.listdir(TEST_DOCS_DIR) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+    image_files = [f for f in os.listdir(TEST_DOCS_DIR) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.heic'))]
     
     if not image_files:
-        logger.warning(f"No images found in {TEST_DOCS_DIR}. Please add .png or .jpg files.")
+        logger.warning(f"No images found in {TEST_DOCS_DIR}. Please add .png/.jpg files.")
         return
 
-    logger.info(f"STARTING TEST RUN. Found {len(image_files)} invoices.")
+    print_separator("=")
+    logger.info(f"{Colors.HEADER}{Colors.BOLD} 🚀 STARTING PIPELINE TEST{Colors.ENDC}")
+    logger.info(f" 📂 Found {len(image_files)} invoices to process")
+    print_separator("=")
 
-    # Track results
-    total_processed = 0
-    gemini_success = 0
-    ocr_fallback = 0
-    failed = 0
+    stats = {"total": 0, "success": 0, "failed": 0, "gemini": 0, "ocr": 0}
 
     for img_filename in image_files:
-        logger.info("=" * 60)
-        logger.info(f"PROCESSING INVOICE: {img_filename}")
+        stats["total"] += 1
+        logger.info(f"\n{Colors.CYAN}📄 PROCESSING: {img_filename}{Colors.ENDC}")
         
         img_path = os.path.join(TEST_DOCS_DIR, img_filename)
 
-        logger.info("Step 1: Sending image to Extraction Service (Gemini/OCR)...")
+        # --- STEP 1: EXTRACTION (With Timer) ---
+        logger.info(" 1️⃣  Sending to Extraction API...")
         
         try:
+            start_time = time.perf_counter()  # <--- START TIMER
+            
             with open(img_path, "rb") as f:
                 response = client.post(
                     "/extract/invoice-image", 
                     files={"file": (img_filename, f, "image/png")}
                 )
             
+            end_time = time.perf_counter()    # <--- STOP TIMER
+            duration = end_time - start_time
+
             if response.status_code != 200:
-                logger.error(f" Extraction Failed: {response.text}")
-                failed += 1
+                logger.error(f"Extraction Failed ({duration:.2f}s): {response.text}")
+                stats["failed"] += 1
                 continue
 
-            extraction_data = response.json()
-            source = extraction_data.get("source", "unknown")
-            items_data = extraction_data.get("items", [])
+            # Parse Response
+            data = response.json()
+            source = data.get("source", "unknown")
+            items_data = data.get("items", [])
             
-            # Track which method was used
-            if source == "gemini":
-                logger.info(f" Used GEMINI API - High accuracy expected")
-                gemini_success += 1
-            elif source == "ocr_fallback":
-                logger.warning(f" Used OCR FALLBACK - May need manual review")
-                ocr_fallback += 1
-            else:
-                logger.warning(f" Unknown source: {source}")
+            # Log Timing and Source
+            time_color = Colors.GREEN if duration < 5 else Colors.WARNING
+            source_icon = "✨" if source == "gemini" else "📷"
             
+            logger.info(f"    {source_icon} Source: {source.upper()}")
+            logger.info(f"    ⏱️  Latency: {time_color}{duration:.2f}s{Colors.ENDC}")
+
+            if source == "gemini": stats["gemini"] += 1
+            else: stats["ocr"] += 1
+
             if not items_data:
-                logger.warning(f"WARNING: Extraction finished but found 0 items in {img_filename}")
-                failed += 1
+                logger.warning("Extraction finished but found 0 items.")
+                stats["failed"] += 1
                 continue
 
-            logger.info(f"Found {len(items_data)} items:")
+            # Pretty Print Items
+            logger.info(f"    🛒 Found {len(items_data)} items:")
+            print(f"      {Colors.BOLD}{'ITEM NAME':<30} | {'PRICE':>8}{Colors.ENDC}")
+            print(f"      {'-'*30} | {'-'*8}")
             
             items = []
-            for i, item_data in enumerate(items_data, 1):
+            for item_data in items_data:
                 item = Item(**item_data)
                 items.append(item)
-                logger.info(f"   {i}. {item.name} - {item.price} EUR")
+                # Clean table row
+                print(f"      {item.name[:30]:<30} | {item.price:>8.2f} €")
 
+            # --- DATABASE SAVE (Optional) ---
+            if save_invoice_to_db:
+                try:
+                    invoice_id = save_invoice_to_db(img_filename, source, items)
+                    logger.info(f"    💾 Saved to DB (ID: {invoice_id})")
+                except Exception as e:
+                    logger.error(f"DB Save failed: {e}")
+
+            # --- STEP 2: LOGIC SIMULATION ---
             random.seed(42) 
-            
             assignments = []
-            logger.info("Step 2: Simulating Drag & Drop (Random Assignment)...")
-
+            # Assign randomly without logging every single line
             for item in items:
-                lucky_user = random.choice(synthetic_users)
-                
-                assignment = ItemAssignment(item_id=item.id, user_id=lucky_user.id)
-                assignments.append(assignment)
-                
-                logger.info(f"   -> Item '{item.name}' ({item.price} EUR) assigned to {lucky_user.name}")
+                assignments.append(ItemAssignment(item_id=item.id, user_id=random.choice(synthetic_users).id))
+            
+            logger.info(f" 2️⃣  Simulated {len(assignments)} random user assignments.")
 
+            # --- STEP 3: CALCULATION ---
+            logger.info(f" 3️⃣  Calculating Split...")
             payer = synthetic_users[0]
-            logger.info(f"Step 3: Calculating Debt. Payer is {payer.name}.")
-
+            
             payload = {
                 "payer_id": payer.id,
                 "users": [u.dict() for u in synthetic_users],
@@ -126,67 +177,53 @@ def test_full_pipeline(synthetic_users):
             calc_response = client.post("/split/calculate-debt", json=payload)
             
             if calc_response.status_code != 200:
-                logger.error(f" Calculation Failed: {calc_response.text}")
-                failed += 1
+                logger.error(f"Calculation Failed: {calc_response.text}")
+                stats["failed"] += 1
                 continue
                 
             result = calc_response.json()
 
-            total_bill_ocr = sum(i.price for i in items)
-            total_bill_calc = result['total_bill_amount']
+            # --- STEP 4: VERIFICATION ---
+            total_ocr = sum(i.price for i in items)
+            total_calc = result['total_bill_amount']
             
-            logger.info(f"Step 4: Verification")
-            logger.info(f"   Total Bill (Extracted Sum): {total_bill_ocr:.2f} EUR")
-            logger.info(f"   Total Bill (Backend Calc): {total_bill_calc:.2f} EUR")
-            
-            if abs(total_bill_ocr - total_bill_calc) >= 0.05:
-                logger.error(" MISMATCH: Extracted sum != Backend calculation!")
-                failed += 1
+            if abs(total_ocr - total_calc) >= 0.05:
+                logger.error(f"Math Mismatch! OCR: {total_ocr} != Backend: {total_calc}")
+                stats["failed"] += 1
                 continue
 
-            logger.info("   User Breakdown:")
-            user_share_sum = 0.0
-            for u_breakdown in result['user_breakdowns']:
-                logger.info(f"     - {u_breakdown['user_name']} ate {u_breakdown['total_share']:.2f} EUR")
-                user_share_sum += u_breakdown['total_share']
+            # Summarize Debt
+            logger.info(f"    💰 Total Bill: {Colors.BOLD}{total_calc:.2f} €{Colors.ENDC}")
             
-            if abs(user_share_sum - total_bill_calc) >= 0.05:
-                logger.error(" MISMATCH: Sum of user shares != total bill!")
-                failed += 1
-                continue
-
-            logger.info("   Final Settlements (Who owes Alice?):")
-            if not result['settlements']:
-                logger.info("     - No debts (Alice ate everything alone?)")
+            # Just show the final settlements, not every user share (reduce noise)
+            if result['settlements']:
+                logger.info("    🤝 Settlements:")
+                for s in result['settlements']:
+                    logger.info(f"       -> {s['message']}")
             else:
-                for settlement in result['settlements']:
-                    logger.info(f"      {settlement['message']}")
+                logger.info("       -> No debts generated.")
 
-            logger.info(" Invoice Verified Successfully.")
-            total_processed += 1
+            logger.info(f"{Colors.GREEN}✅ INVOICE PASSED{Colors.ENDC}")
+            stats["success"] += 1
             
         except Exception as e:
-            logger.error(f" Unexpected error processing {img_filename}: {e}")
-            failed += 1
-            continue
+            logger.error(f"Unexpected error: {e}")
+            stats["failed"] += 1
 
-    logger.info("=" * 60)
-    logger.info("TEST SUMMARY:")
-    logger.info(f"  Total Receipts: {len(image_files)}")
-    logger.info(f"   Successfully Processed: {total_processed}")
-    logger.info(f"   Used Gemini API: {gemini_success}")
-    logger.info(f"   Used OCR Fallback: {ocr_fallback}")
-    logger.info(f"   Failed: {failed}")
-    logger.info("=" * 60)
+    # --- SUMMARY ---
+    print("\n")
+    print_separator("=")
+    logger.info(f"{Colors.HEADER}📊 TEST SUMMARY{Colors.ENDC}")
+    logger.info(f"   Total:   {stats['total']}")
+    logger.info(f"   Passed:  {Colors.GREEN}{stats['success']}{Colors.ENDC}")
+    logger.info(f"   Failed:  {Colors.FAIL}{stats['failed']}{Colors.ENDC}")
+    logger.info(f"   Sources: Gemini({stats['gemini']}) | OCR({stats['ocr']})")
+    print_separator("=")
     
-    if failed > 0:
-        logger.warning(f" {failed} receipts failed processing. Check logs above.")
-    
-    if total_processed > 0:
-        logger.info(" ALL PROCESSED TESTS PASSED.")
+    if stats["failed"] > 0:
+        pytest.fail(f"{stats['failed']} tests failed")
     else:
-        pytest.fail(" No receipts were successfully processed!")
-
+        logger.info(f"{Colors.GREEN}ALL SYSTEMS GO 🚀{Colors.ENDC}")
 
 if __name__ == "__main__":
     sys.exit(pytest.main(["-s", "-v", __file__]))

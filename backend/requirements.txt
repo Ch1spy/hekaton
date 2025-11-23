@@ -19,9 +19,7 @@ uvicorn==0.38.0
 opencv-python-headless
 python-multipart
 httpx
-<<<<<<< HEAD
 pytest
-=======
-pytest
-superbase
->>>>>>> 54323f2 (added connection to the supa db)
+supabase
+python-dotenv
+google-generativeai

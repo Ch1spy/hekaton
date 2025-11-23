@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from backend.db import supabase
+from db import supabase
 
 router = APIRouter(
     prefix="/flashcards",

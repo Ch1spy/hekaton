@@ -1,8 +1,9 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File
 from pydantic import BaseModel
 from typing import List
-from services.ocr_service import process_invoice_image
-from services.gemini_services import process_with_gemini, check_internet
+from services.ocr_service import extract_text_with_tesseract, parse_invoice_items
+from services.gemini_services import process_receipt_direct, check_internet
+from config import ENABLE_SUPABASE_WRITE
 
 router = APIRouter(prefix="/extract", tags=["Extraction"])
 
@@ -17,36 +18,37 @@ class ExtractionResponse(BaseModel):
 
 @router.post("/invoice-image", response_model=ExtractionResponse)
 async def scan_invoice(file: UploadFile = File(...)):
-    """
-    Extract items from receipt image.
-    Uses Gemini API if available, falls back to OCR.
-    """
-    try:
-        contents = await file.read()
-        
-        
-        if check_internet():
-            print("🌐 Internet available - trying Gemini API...")
-            gemini_result = process_with_gemini(contents)
-            
-            if gemini_result:
-                return {
-                    "source": "gemini",
-                    "items": gemini_result
-                }
-            else:
-                print(" Gemini failed, falling back to OCR...")
+    contents = await file.read()
+    items = []
+    source = "unknown"
+
+    # --- STEP 1: TRY GEMINI AI (The Smart Way) ---
+    if check_internet():
+        print(f"✨ Sending {file.filename} to Gemini...")
+        items = process_receipt_direct(contents)
+        if items:
+            source = "gemini"
         else:
-            print("📴 No internet - using OCR fallback...")
-        
-        
-        ocr_result = process_invoice_image(contents)
-        
-        return {
-            "source": "ocr_fallback",
-            "items": ocr_result
-        }
-        
-    except Exception as e:
-        print(f" Error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to process image")
+            print("⚠️ Gemini returned None, falling back...")
+    else:
+        print("⚠️ No Internet connection detected. Skipping AI.")
+
+    # --- STEP 2: FALLBACK TO TESSERACT (The Dumb Way) ---
+    if not items:
+        print("📷 Falling back to Tesseract OCR...")
+        raw_text = extract_text_with_tesseract(contents)
+        items = parse_invoice_items(raw_text)
+        source = "ocr_fallback"
+
+    # --- STEP 3: SAVE LOGS ---
+    if ENABLE_SUPABASE_WRITE:
+        try:
+            from db_invoice import save_invoice_to_db
+            save_invoice_to_db(file.filename, source, items) # type: ignore
+        except Exception as e: 
+            print(f"DB Save Error: {e}")
+    
+    return {
+        "source": source,
+        "items": items
+    }
