@@ -37,7 +37,7 @@ class _MyAppState extends State<MyApp> {
     super.initState();
 
     _appStateNotifier = AppStateNotifier.instance;
-    _router = createRouter(_appStateNotifier)..go('/homepage');
+    _router = createRouter(_appStateNotifier)..go('/prvastran');
   }
 
   void setThemeMode(ThemeMode mode) => safeSetState(() {

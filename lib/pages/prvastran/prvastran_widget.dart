@@ -14,8 +14,11 @@ class PrvastranWidget extends StatefulWidget {
   State<PrvastranWidget> createState() => _PrvastranWidgetState();
 }
 
-class _PrvastranWidgetState extends State<PrvastranWidget> {
+class _PrvastranWidgetState extends State<PrvastranWidget> 
+    with SingleTickerProviderStateMixin {
   late PrvastranModel _model;
+  late AnimationController _animationController;
+  late Animation<double> _scaleAnimation;
 
   final scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -23,12 +26,43 @@ class _PrvastranWidgetState extends State<PrvastranWidget> {
   void initState() {
     super.initState();
     _model = createModel(context, () => PrvastranModel());
+    
+    // Sharp, quick pixel-style pop animation
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 650), // Fast!
+      vsync: this,
+    );
+    
+    _scaleAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.easeOutBack, // Sharp bounce, retro feel
+      ),
+    );
+    
+    _animationController.forward();
+    
+    // Navigate after 2 seconds
+    Future.delayed(const Duration(milliseconds: 2000), () {
+      if (mounted) {
+        context.pushReplacementNamed(
+          'homepage',
+          extra: <String, dynamic>{
+            kTransitionInfoKey: TransitionInfo(
+              hasTransition: true,
+              transitionType: PageTransitionType.fade,
+              duration: const Duration(milliseconds: 400),
+            ),
+          },
+        );
+      }
+    });
   }
 
   @override
   void dispose() {
+    _animationController.dispose();
     _model.dispose();
-
     super.dispose();
   }
 
@@ -41,12 +75,19 @@ class _PrvastranWidgetState extends State<PrvastranWidget> {
       },
       child: Scaffold(
         key: scaffoldKey,
-        backgroundColor: FlutterFlowTheme.of(context).primaryBackground,
+        backgroundColor: const Color.fromARGB(255, 200, 181, 158), // Dark green
         body: SafeArea(
           top: true,
-          child: Column(
-            mainAxisSize: MainAxisSize.max,
-            children: [],
+          child: Center(
+            child: ScaleTransition(
+              scale: _scaleAnimation,
+              child: Image.asset(
+                'assets/images/logo.png',
+                width: 100,
+                height: 100,
+                fit: BoxFit.contain,
+              ),
+            ),
           ),
         ),
       ),
