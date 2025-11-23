@@ -15,6 +15,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+#development only
 # app.add_middleware(
 #     CORSMiddleware,
 #     allow_origins=["*"],
@@ -26,6 +27,3 @@ app.add_middleware(
 app.include_router(split_logic.router)
 app.include_router(extraction.router)
 app.include_router(flashcards.router)
-@app.get("/")
-def root():
-    return {"status": "joskice Running"}

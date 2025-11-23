@@ -16,12 +16,7 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY) 
 
 def preprocess_receipt_fast(image_bytes: bytes) -> Optional[Image.Image]:
-    """
-    Optimized for speed: 
-    1. Opens directly (handling HEIC via register_heif_opener).
-    2. Resizes using faster algorithm.
-    3. Skips contrast enhancement (Gemini 1.5 usually doesn't need it).
-    """
+
     try:
         image = Image.open(io.BytesIO(image_bytes))
     except Exception:
