@@ -22,25 +22,22 @@ async def scan_invoice(file: UploadFile = File(...)):
     items = []
     source = "unknown"
 
-    # --- STEP 1: TRY GEMINI AI (The Smart Way) ---
     if check_internet():
-        print(f"✨ Sending {file.filename} to Gemini...")
+        print(f"Sending {file.filename} to Gemini...")
         items = process_receipt_direct(contents)
         if items:
             source = "gemini"
         else:
-            print("⚠️ Gemini returned None, falling back...")
+            print("Gemini returned None, falling back...")
     else:
-        print("⚠️ No Internet connection detected. Skipping AI.")
+        print("No Internet connection detected. Skipping AI.")
 
-    # --- STEP 2: FALLBACK TO TESSERACT (The Dumb Way) ---
     if not items:
         print("📷 Falling back to Tesseract OCR...")
         raw_text = extract_text_with_tesseract(contents)
         items = parse_invoice_items(raw_text)
         source = "ocr_fallback"
 
-    # --- STEP 3: SAVE LOGS ---
     if ENABLE_SUPABASE_WRITE:
         try:
             from db_invoice import save_invoice_to_db
